@@ -418,7 +418,17 @@ onAuthStateChanged(auth,async u=>{
     let ownerDoc=profile;
     if(businessUid!==uid){const os=await getDoc(doc(db,"users",businessUid));if(os.exists())ownerDoc=os.data()||{}}
     ownerProfile=ownerDoc;
-    ownerAccountName=String(ownerDoc.nama||ownerDoc.namaKaryawan||ownerDoc.name||ownerDoc.displayName||ownerDoc.email||"Owner").trim();
+    ownerAccountName=String(
+  ownerDoc.namaKonter ||
+  ownerDoc.nama_konter ||
+  ownerDoc.namaToko ||
+  ownerDoc.namaUsaha ||
+  ownerDoc.nama ||
+  ownerDoc.namaKaryawan ||
+  ownerDoc.name ||
+  ownerDoc.displayName ||
+  "Owner"
+).trim();
     ownerSettings={up:Number(ownerDoc.upPengelolaPerPcs??ownerDoc.upPengelola??0)||0,kas:Number(ownerDoc.kasBulananDefault??ownerDoc.kasBulanan??ownerDoc.uangKasBulanan??0)||0};
     $("email").textContent=u.email||"-";
     isiAkun(profile,u);
