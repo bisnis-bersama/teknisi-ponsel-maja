@@ -70,7 +70,7 @@ import{getFirestore,collection,query,where,getDocs,doc,getDoc,addDoc,setDoc,incr
 const cfg={apiKey:"AIzaSyC_PcarMTT5Un7qfSLzf92o5OGn5rginsI",authDomain:"fixzy-update.firebaseapp.com",projectId:"fixzy-update",storageBucket:"fixzy-update.firebasestorage.app",messagingSenderId:"995892519622",appId:"1:995892519622:web:fa41047944d8e5b35d6dc7"};
 const app=initializeApp(cfg),auth=getAuth(app),db=getFirestore(app);
 
-let uid="",businessUid="",products=[],cart=[],ready=false,profile={},ownerSettings={up:0,kas:0},sheetLinks=[],sheetCache=null;
+let uid="",businessUid="",products=[],cart=[],ready=false,profile={},ownerProfile={},ownerAccountName="",ownerSettings={up:0,kas:0},sheetLinks=[],sheetCache=null;
 const $=x=>document.getElementById(x);
 const rp=n=>"Rp "+(Number(n)||0).toLocaleString("id-ID");
 const today=()=>new Date().toISOString().slice(0,10);
@@ -374,7 +374,11 @@ window.simpan=async()=>{
     localStorage.removeItem(cartKey());cart=[];renderCart();
     $("save").textContent="Pesanan menunggu approval owner.";
     msg("Pesanan berhasil dikirim dan menunggu approval owner.","ok");
-    showSuccessModal("Pesanan berhasil dikirim.\nNomor nota: "+d.nomorNota+"\nStatus: MENUNGGU APPROVAL OWNER.");
+    const namaMember=String(profile.nama||profile.namaKaryawan||profile.name||auth.currentUser?.displayName||profile.displayName||profile.email||"Member").trim();
+    const namaOwner=String(ownerAccountName||"Owner").trim();
+    showSuccessModal(
+      "Halo "+namaMember+",\n\nPesanan Anda telah berhasil kami terima. Terima kasih telah melakukan order produk melalui layanan kami.\n\nSaat ini pesanan sedang dalam proses pengecekan dan penyelesaian. Rincian lengkap pesanan akan kami informasikan setelah proses selesai.\n\nTerima kasih atas kepercayaan dan dukungan Anda.\n\nSalam,\n"+namaOwner
+    );
   }catch(e){console.error(e);if(btn)btn.disabled=false;$("save").textContent="Siap dikirim.";showErrorModal(e.message)}
 };
 
@@ -413,6 +417,8 @@ onAuthStateChanged(auth,async u=>{
     businessUid=business(profile);
     let ownerDoc=profile;
     if(businessUid!==uid){const os=await getDoc(doc(db,"users",businessUid));if(os.exists())ownerDoc=os.data()||{}}
+    ownerProfile=ownerDoc;
+    ownerAccountName=String(ownerDoc.nama||ownerDoc.namaKaryawan||ownerDoc.name||ownerDoc.displayName||ownerDoc.email||"Owner").trim();
     ownerSettings={up:Number(ownerDoc.upPengelolaPerPcs??ownerDoc.upPengelola??0)||0,kas:Number(ownerDoc.kasBulananDefault??ownerDoc.kasBulanan??ownerDoc.uangKasBulanan??0)||0};
     $("email").textContent=u.email||"-";
     isiAkun(profile,u);
