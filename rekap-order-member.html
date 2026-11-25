@@ -8,7 +8,7 @@ header{position:fixed;top:0;left:0;right:0;z-index:9999;height:74px;background:v
 .logo{width:52px;height:52px;border-radius:14px;object-fit:contain;background:#000;padding:4px}
 .hi{min-width:0;flex:1}.hi h1{margin:0;font-size:18px;font-weight:900}.email{font-size:11px;color:#9ca3af;font-weight:700}
 .acts{display:flex;gap:8px}.btn{border:2px solid #111827;border-radius:9px;padding:10px 12px;font-weight:900;cursor:pointer;box-shadow:3px 3px 0 #111827}
-.refresh{height:42px;background:transparent;color:#fff;border-color:#334155;box-shadow:none}.dark{height:42px;width:44px;background:#1f2937;color:#facc15;border-color:#334155;box-shadow:none}
+.refresh{height:42px;background:transparent;color:#fff;border-color:#334155;box-shadow:none}.backup{height:42px;background:#16a34a;color:#fff;border-color:#166534;box-shadow:none}.backup:disabled{opacity:.45;cursor:not-allowed}.dark{height:42px;width:44px;background:#1f2937;color:#facc15;border-color:#334155;box-shadow:none}
 main{max-width:1100px;margin:auto;padding:88px 12px 30px}
 .notice{font-size:11px;font-weight:800;color:#64748b;margin-bottom:10px}.ok{color:#15803d}.err{color:#dc2626}
 .card{background:#fff;border:2px solid #111827;border-radius:12px;padding:15px;margin-bottom:14px;box-shadow:4px 4px 0 #111827}
@@ -101,12 +101,12 @@ body.dark td{border-color:#334155}
   .hi h1{font-size:16px}
   main{padding:80px 8px 24px}
   .filters{grid-template-columns:1fr}
-  .acts .btn{padding:8px}
+  .acts .btn{padding:8px;font-size:10px}
   .card{padding:12px}
 }
 .wa-btn{display:inline-block;padding:6px 9px;border-radius:7px;background:#25D366;color:#fff;font-weight:700;text-decoration:none;font-size:12px}.wa-btn:hover{filter:brightness(.95)}
 </style></head><body>
-<header><div class="head"><img class="logo" src="logo.png" alt="FIXZY"><div class="hi"><h1>Rekap Order Member</h1><span id="email" class="email">-</span></div><div class="acts"><button class="btn refresh" type="button" onclick="location.reload()">↻ Refresh</button><button id="dark" class="btn dark" type="button">🌙</button></div></div></header>
+<header><div class="head"><img class="logo" src="logo.png" alt="FIXZY"><div class="hi"><h1>Rekap Order Member</h1><span id="email" class="email">-</span></div><div class="acts"><button class="btn backup" id="backupBtn" type="button" disabled>⬇ Backup</button><button class="btn refresh" type="button" onclick="location.reload()">↻ Refresh</button><button id="dark" class="btn dark" type="button">🌙</button></div></div></header>
 <main><div id="notice" class="notice">Menunggu akun...</div>
 
 <div class="card"><div class="title">REKAPAN ORDERAN</div><div class="filters"><div><label>JATUH TEMPO</label><select id="periode"><option value="all">Semua Jatuh Tempo</option></select></div><div><label>PENCARIAN MEMBER / NOTA</label><input id="search" placeholder="Nama member / nomor nota..."></div><div class="actions"><button class="btn secondary" type="button" onclick="location.reload()">↻ Muat Ulang</button></div></div></div>
@@ -757,8 +757,48 @@ function renderAll(){
  renderRekap();
 }
 
+// Unduh salinan data yang telah dimuat dari Firestore dalam format JSON.
+function backupData(){
+ if(!ready){
+  notice("Data belum siap. Tunggu sampai rekap selesai dimuat.","err");
+  return;
+ }
+ const now=new Date();
+ const pad=n=>String(n).padStart(2,"0");
+ const stamp=`${now.getFullYear()}${pad(now.getMonth()+1)}${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}`;
+ const payload={
+  aplikasi:"FIXZY | Rekap Order Member",
+  versiBackup:1,
+  dibuatPada:now.toISOString(),
+  akun:{
+   uid,
+   ownerUid,
+   email:profile.email||auth.currentUser?.email||"",
+   role:String(profile.role||"")
+  },
+  ringkasan:{jumlahOrder:orders.length,jumlahProdukStok:stockProducts.length},
+  data:{order_member:orders,stok:stockProducts}
+ };
+ try{
+  const blob=new Blob([JSON.stringify(payload,null,2)],{type:"application/json;charset=utf-8"});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement("a");
+  a.href=url;
+  a.download=`FIXZY_BACKUP_${stamp}.json`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),1000);
+  notice(`Backup berhasil dibuat • ${orders.length} order • ${stockProducts.length} produk stok.`,"ok");
+ }catch(e){
+  console.error("Backup gagal:",e);
+  notice("Gagal membuat backup: "+e.message,"err");
+ }
+}
+
 $("periode").onchange=renderAll;
 $("search").oninput=renderAll;
+$("backupBtn").onclick=backupData;
 
 $("dark").onclick=()=>{
  document.body.classList.toggle("dark");
@@ -804,6 +844,7 @@ async function bacaSesiIndex(){
     populateJatuhTempoFilter();
 
     ready=true;
+    $("backupBtn").disabled=false;
     renderAll();
     notice(
       `Akun aktif dari INDEX • ${role.toUpperCase()} • ${orders.length} order member.`,
