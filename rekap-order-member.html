@@ -106,7 +106,7 @@ body.dark td{border-color:#334155}
 }
 .wa-btn{display:inline-block;padding:6px 9px;border-radius:7px;background:#25D366;color:#fff;font-weight:700;text-decoration:none;font-size:12px}.wa-btn:hover{filter:brightness(.95)}
 </style></head><body>
-<header><div class="head"><img class="logo" src="logo.png" alt="FIXZY"><div class="hi"><h1>Rekap Order Member</h1><span id="email" class="email">-</span></div><div class="acts"><button class="btn backup" id="backupBtn" type="button" disabled>⬇ Backup</button><button class="btn refresh" type="button" onclick="location.reload()">↻ Refresh</button><button id="dark" class="btn dark" type="button">🌙</button></div></div></header>
+<header><div class="head"><img class="logo" src="logo.png" alt="FIXZY"><div class="hi"><h1>Rekap Order Member</h1><span id="email" class="email">-</span></div><div class="acts"><button class="btn backup" id="backupBtn" type="button" disabled>⬇ Backup Excel</button><button class="btn refresh" type="button" onclick="location.reload()">↻ Refresh</button><button id="dark" class="btn dark" type="button">🌙</button></div></div></header>
 <main><div id="notice" class="notice">Menunggu akun...</div>
 
 <div class="card"><div class="title">REKAPAN ORDERAN</div><div class="filters"><div><label>JATUH TEMPO</label><select id="periode"><option value="all">Semua Jatuh Tempo</option></select></div><div><label>PENCARIAN MEMBER / NOTA</label><input id="search" placeholder="Nama member / nomor nota..."></div><div class="actions"><button class="btn secondary" type="button" onclick="location.reload()">↻ Muat Ulang</button></div></div></div>
@@ -758,41 +758,131 @@ function renderAll(){
 }
 
 // Unduh salinan data yang telah dimuat dari Firestore dalam format JSON.
-function backupData(){
+async function backupData(){
  if(!ready){
   notice("Data belum siap. Tunggu sampai rekap selesai dimuat.","err");
   return;
  }
- const now=new Date();
- const pad=n=>String(n).padStart(2,"0");
- const stamp=`${now.getFullYear()}${pad(now.getMonth()+1)}${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}`;
- const payload={
-  aplikasi:"FIXZY | Rekap Order Member",
-  versiBackup:1,
-  dibuatPada:now.toISOString(),
-  akun:{
-   uid,
-   ownerUid,
-   email:profile.email||auth.currentUser?.email||"",
-   role:String(profile.role||"")
-  },
-  ringkasan:{jumlahOrder:orders.length,jumlahProdukStok:stockProducts.length},
-  data:{order_member:orders,stok:stockProducts}
- };
+
+ const btn=$("backupBtn");
+ btn.disabled=true;
+ btn.textContent="Menyiapkan...";
  try{
-  const blob=new Blob([JSON.stringify(payload,null,2)],{type:"application/json;charset=utf-8"});
-  const url=URL.createObjectURL(blob);
-  const a=document.createElement("a");
-  a.href=url;
-  a.download=`FIXZY_BACKUP_${stamp}.json`;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  setTimeout(()=>URL.revokeObjectURL(url),1000);
-  notice(`Backup berhasil dibuat • ${orders.length} order • ${stockProducts.length} produk stok.`,"ok");
+  // SheetJS dipakai untuk membuat file Excel .xlsx langsung di browser.
+  const XLSX=await import("https://cdn.jsdelivr.net/npm/xlsx@0.18.5/+esm");
+  const now=new Date();
+  const pad=n=>String(n).padStart(2,"0");
+  const stamp=`${now.getFullYear()}${pad(now.getMonth()+1)}${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}`;
+  const clean=v=>{
+   if(v===null||v===undefined)return "";
+   if(v instanceof Date)return v.toISOString();
+   if(typeof v==="object")return JSON.stringify(v);
+   return v;
+  };
+
+  const orderRows=[];
+  const detailRows=[];
+  let totalNilai=0,totalUP=0,totalTabungan=0,totalKas=0,totalBayar=0,totalSisa=0;
+
+  orders.forEach(r=>{
+   const m=r.member||r.pelanggan||{};
+   const c=calculateOrder(r);
+   const due=dueDate(r);
+   const qty=c.items.reduce((sum,x)=>sum+num(x.qty),0);
+   const sisa=c.cash?0:Math.max(0,c.totalTagihan-c.paid);
+   const kas=kasOf(r);
+   totalNilai+=c.nilaiBarang;
+   totalUP+=c.up;
+   totalTabungan+=c.tabungan;
+   totalKas+=kas;
+   totalBayar+=c.paid;
+   totalSisa+=sisa;
+
+   orderRows.push({
+    "ID Order":clean(r.id),
+    "Nomor Nota":clean(r.nomorNota||r.id),
+    "Nama Member":clean(m.nama||r.memberName||""),
+    "ID Member":clean(r.memberId||r.idMember||m.id||""),
+    "No. WhatsApp":clean(m.wa||m.noWa||m.nomorWa||m.phone||""),
+    "Jenis Order":c.cash?"CASH":"TEMPO",
+    "Status":sisa>0?"TAGIHAN":"LUNAS",
+    "Tanggal Jatuh Tempo":due?due.toLocaleDateString("id-ID"):"",
+    "Qty Order":qty,
+    "Nilai Barang":c.nilaiBarang,
+    "UP Pengelola":c.up,
+    "Tabungan Member":c.tabungan,
+    "Kas Bulanan":kas,
+    "Total Tagihan":c.totalTagihan,
+    "Pembayaran":c.paid,
+    "Sisa Tagihan":sisa,
+    "Tempo (Hari)":num(r.tempoHari),
+    "Owner UID":clean(r.ownerUid||r.ownerId||ownerUid),
+    "Dibuat":clean(r.createdAt||r.tanggal||r.created_at||"")
+   });
+
+   c.items.forEach((x,index)=>{
+    detailRows.push({
+     "ID Order":clean(r.id),
+     "Nomor Nota":clean(r.nomorNota||r.id),
+     "Nama Member":clean(m.nama||r.memberName||""),
+     "No.":index+1,
+     "Produk":clean(x.nama),
+     "Kode Produk":clean(x.kode||x.kodeProduk||x.produkId),
+     "Qty":num(x.qty),
+     "Harga Dasar/Pcs":num(x.hargaDasar),
+     "Diskon":num(x.diskon),
+     "Nilai Barang":num(x.nilaiBarang),
+     "UP Pengelola/Pcs":num(x.upPengelolaPerPcs),
+     "Total UP":num(x.totalUP),
+     "Tabungan/Pcs":num(x.tabunganPerPcs),
+     "Total Tabungan":num(x.totalTabungan),
+     "Total Item":num(x.total)
+    });
+   });
+  });
+
+  const summaryRows=[
+   {"Keterangan":"Tanggal Backup","Nilai":now.toLocaleString("id-ID")},
+   {"Keterangan":"Email Akun","Nilai":profile.email||auth.currentUser?.email||""},
+   {"Keterangan":"UID","Nilai":uid},
+   {"Keterangan":"Owner UID","Nilai":ownerUid},
+   {"Keterangan":"Jumlah Order","Nilai":orders.length},
+   {"Keterangan":"Jumlah Produk Stok","Nilai":stockProducts.length},
+   {"Keterangan":"Total Nilai Barang","Nilai":totalNilai},
+   {"Keterangan":"Total UP Pengelola","Nilai":totalUP},
+   {"Keterangan":"Total Tabungan Member","Nilai":totalTabungan},
+   {"Keterangan":"Total Kas Bulanan","Nilai":totalKas},
+   {"Keterangan":"Total Pembayaran","Nilai":totalBayar},
+   {"Keterangan":"Total Sisa Tagihan","Nilai":totalSisa}
+  ];
+
+  const stockRows=stockProducts.map(p=>{
+   const row={};
+   Object.entries(p).forEach(([k,v])=>row[k]=clean(v));
+   return row;
+  });
+
+  const wb=XLSX.utils.book_new();
+  const addSheet=(name,rows)=>{
+   const ws=XLSX.utils.json_to_sheet(rows.length?rows:[{"Informasi":"Tidak ada data"}]);
+   ws["!cols"]=Object.keys(rows[0]||{"Informasi":""}).map(k=>({
+    wch:Math.min(32,Math.max(14,k.length+3))
+   }));
+   XLSX.utils.book_append_sheet(wb,ws,name);
+  };
+  addSheet("Ringkasan",summaryRows);
+  addSheet("Order Member",orderRows);
+  addSheet("Detail Barang",detailRows);
+  addSheet("Stok",stockRows);
+
+  XLSX.writeFile(wb,`FIXZY_BACKUP_${stamp}.xlsx`);
+  notice(`Backup Excel berhasil • ${orderRows.length} order • ${detailRows.length} detail barang • ${stockRows.length} stok.`,"ok");
  }catch(e){
-  console.error("Backup gagal:",e);
-  notice("Gagal membuat backup: "+e.message,"err");
+  console.error("Backup Excel gagal:",e);
+  notice("Gagal membuat Excel: "+e.message,"err");
+ }finally{
+  btn.disabled=false;
+  btn.textContent="⬇ Backup Excel";
  }
 }
 
